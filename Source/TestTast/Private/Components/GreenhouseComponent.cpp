@@ -204,14 +204,23 @@ FPlantCell UGreenhouseComponent::MakePlantCell()
 
 FIntPoint UGreenhouseComponent::WorldToGrid(const FVector& WorldLocation) const
 {
-	// Используем GridOrigin как начало сетки.
-	FVector RelativeLocation = WorldLocation - GridOrigin;
+	// Находим смещение курсора ОТНОСИТЕЛЬНО ЦЕНТРА сетки.
+	FVector RelativeToCenter = WorldLocation - GridOrigin;
 
-	// Полный шаг от начала одной ячейки до начала следующей.
-	const float Step = CellSize + CellSpacing;
+	const float Step = CellSpacing;
 
-	int32 GridX = FMath::RoundToInt(RelativeLocation.X / Step);
-	int32 GridY = FMath::RoundToInt(RelativeLocation.Y / Step);
+	// Вычисляем сырой индекс.
+	float RawGridX = RelativeToCenter.X / Step;
+	float RawGridY = RelativeToCenter.Y / Step;
+
+	// 4. Находим индекс самой левой/нижней ячейки.
+	// Если GridWidth=5, индексы: -2, -1, 0, 1, 2. Центр (0) получается при вычитании половины размера.
+	const int32 GridIndexOffsetX = GridWidth / 2;
+	const int32 GridIndexOffsetY = GridHeight / 2;
+
+	// Округляем и применяем смещение, чтобы получить финальный индекс
+	int32 GridX = FMath::RoundToInt(RawGridX) + GridIndexOffsetX;
+	int32 GridY = FMath::RoundToInt(RawGridY) + GridIndexOffsetY;
 
 	return FIntPoint(GridX, GridY);
 }
@@ -223,14 +232,22 @@ FVector UGreenhouseComponent::GridToWorld(const FIntPoint& GridCoords) const
 		return FVector::ZeroVector;
 	}
 
-	const float Step = CellSize + CellSpacing;
+	const float Step = CellSpacing;
 
-	// Находим начало ячейки и смещаемся к её центру
-	float RelativeX = GridCoords.X * Step + (CellSize * 0.5f);
-	float RelativeY = GridCoords.Y * Step + (CellSize * 0.5f);
+	// Находим смещение индекса ОТНОСИТЕЛЬНО ЦЕНТРА.
+	// Если мы в ячейке с индексом 0 (самая левая), а всего ячеек 5,
+	// то её смещение от центра: 0 - (5/2) = -2.5 шага.
+	float OffsetFromCenterX = (GridCoords.X - (GridWidth / 2.0f)) * Step;
+	float OffsetFromCenterY = (GridCoords.Y - (GridHeight / 2.0f)) * Step;
 
-	FVector WorldLocation = GridOrigin + FVector(RelativeX, RelativeY, 0.0f);
-	return WorldLocation;
+	// Находим центр ячейки в мировых координатах.
+	// * GridOrigin - это центр всей сетки.
+	// * OffsetFromCenter - это смещение от центра сетки до начала нужной ячейки.
+	// * CellSize * 0.5f - это смещение от начала ячейки до её центра.
+	float WorldX = GridOrigin.X + OffsetFromCenterX + (CellSize * 0.5f);
+	float WorldY = GridOrigin.Y + OffsetFromCenterY + (CellSize * 0.5f);
+
+	return FVector(WorldX, WorldY, GridOrigin.Z);
 }
 
 void UGreenhouseComponent::DrawDebugGreenhouseInfo(float Duration)
@@ -239,6 +256,7 @@ void UGreenhouseComponent::DrawDebugGreenhouseInfo(float Duration)
 
 	GEngine->AddOnScreenDebugMessage(-1, Duration, FColor::Yellow, FString::Printf(TEXT("- Cells Occupied: '%d' / '%d'"), CountOccupiedCells(), GetNumberOfPlantCells()));
 	GEngine->AddOnScreenDebugMessage(-1, Duration, FColor::Yellow, FString::Printf(TEXT("- Plants Grown: '%d'"), FindPlantsByState(EPlantState::PS_Growing).Num()));
+	GEngine->AddOnScreenDebugMessage(-1, Duration, FColor::Yellow, FString::Printf(TEXT("- Ready To Harvest: '%d'"), FindPlantsByState(EPlantState::PS_ReadyToHarvest).Num()));
 
 	GEngine->AddOnScreenDebugMessage(-1, Duration, FColor::White, "---------------------------------------");
 
@@ -250,7 +268,8 @@ void UGreenhouseComponent::DrawDebugGreenhouseInfo(float Duration)
 
 void UGreenhouseComponent::DrawDebugGreenhousePlantCells(float Duration)
 {
-	const FVector OwnerLocation = GridOrigin;
+	const FVector HalfCellSize = FVector(CellSize * 0.5f);
+	const FVector HalfGridSize = FVector((GridWidth - 1) * CellSpacing * 0.5f, (GridHeight - 1) * CellSpacing * 0.5f, 0.0f);
 
     for (int32 y = 0; y < GridHeight; ++y)
     {
@@ -260,10 +279,32 @@ void UGreenhouseComponent::DrawDebugGreenhousePlantCells(float Duration)
 			int32 Index = y * GridWidth + x;
 
 			FindPlantByIndexCell(Index, PlantCell);
-			FLinearColor ColorCell = PlantCell.IsOccupied() ? FLinearColor::Green : FLinearColor::Red;
+			FLinearColor ColorCell;
 
-			// Примерный размер ячейки.
-			FVector CellLocation = OwnerLocation + FVector(x * CellSpacing, y * CellSpacing, 0.0f);
+			if (PlantCell.State == EPlantState::PS_Empty)
+			{
+				ColorCell = FLinearColor::Red;
+			}
+			else if (PlantCell.State == EPlantState::PS_Growing)
+			{
+				ColorCell = FLinearColor::Green;
+			}
+			else if (PlantCell.State == EPlantState::PS_ReadyToHarvest)
+			{
+				ColorCell = FLinearColor::Yellow;
+			}
+			else
+			{
+				ColorCell = FLinearColor::Black;
+			}
+
+			// Вычисляем центр ячейки.
+			// GridOrigin - центр всей сетки.
+			// (x - (GridWidth-1)/2) - смещение относительно центра по X.
+			float OffsetX = (x - (GridWidth - 1) / 2.0f) * CellSpacing;
+			float OffsetY = (y - (GridHeight - 1) / 2.0f) * CellSpacing;
+
+			FVector CellLocation = GridOrigin + FVector(OffsetX, OffsetY, 0.0f);
 
 			// Draw Debug Box.
 			UKismetSystemLibrary::DrawDebugBox(

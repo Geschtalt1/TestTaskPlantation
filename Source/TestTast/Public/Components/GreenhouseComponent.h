@@ -84,7 +84,7 @@ bool SetResourceValue(const FGameplayTag& InResTag, float NewValue)
 
 	void Update(float DeltaTime)
 	{
-		if ((State == EPlantState::PS_Empty) || (!Data))
+		if ((State == EPlantState::PS_Empty) || (State == EPlantState::PS_ReadyToHarvest) || (!Data))
 		{
 			return;
 		}
@@ -249,7 +249,6 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnPlantationCreated);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnPlantationCleared);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnSimulationUpdated);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPlantationPlantRemoved, int32, IndexCell);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAnyPlantStateChanged, int32, IndexCell);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnPlantSeeded, UPlantData*, PlantData, int32, IndexCell);
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
@@ -273,7 +272,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Utility")
 	void ClearPlantation();
 
-	/****/
+	/**
+	 * @brief Обновляет состояние всей системы теплицы (симуляцию).
+	 *
+	 * @param DeltaTime Время, прошедшее с момента последнего кадра (в секундах).
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Utility")
 	void UpdateSimulation(float DeltaTime);
 
@@ -320,10 +323,23 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Utility")
 	bool FindPlantByIndexCell(int32 IndexCell, FPlantCell& FoundPlant) const;
 
+	/**
+	 * @brief Выполняет поиск данных о растении по заданным координатам сетки.
+	 *
+	 * @param GridCoords Координаты ячейки, в которой нужно выполнить поиск.
+	 * @param FoundPlant Ссылка на объект, куда будут записаны данные о найденном растении.
+	 * 
+	 * @return true, если ячейка занята и данные успешно записаны в FoundPlant; иначе false.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Utility")
 	bool FindPlantCellByCoords(const FIntPoint& GridCoords, FPlantCell& FoundPlant) const;
 
-	/***/
+	/**
+	 * @brief Выполняет поиск всех ячеек сетки, в которых находятся растения с указанным состоянием.
+	 *
+	 * @param InState Состояние растения, по которому будет производиться фильтрация.
+	 * @return TArray<FPlantCell> Массив, содержащий данные о всех найденных ячейках, соответствующих заданному состоянию.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Utility")
 	TArray<FPlantCell> FindPlantsByState(const EPlantState InState) const;
 
@@ -350,12 +366,25 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Utility")
 	int32 CountOccupiedCells() const;
 
+	/**
+	 * @brief Преобразует точку в мировых координатах (World Space) в целочисленные координаты сетки (Grid Coordinates).
+	 * Координаты отсчитываются от центра сетки, где находится GridOrigin.
+	 *
+	 * @param WorldLocation Точка в мировом пространстве, которую необходимо преобразовать.
+	 * @return FIntPoint Координаты ячейки сетки. Если точка находится за пределами сетки, координаты будут отрицательными.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Utility")
 	FIntPoint WorldToGrid(const FVector& WorldLocation) const;
 
+	/**
+	 * @brief Преобразует целочисленные координаты сетки в точку мирового пространства (World Space).
+	 * Возвращает позицию центра указанной ячейки.
+	 *
+	 * @param GridCoords Координаты ячейки на сетке (X, Y).
+	 * @return FVector Точка в мировом пространстве, соответствующая центру ячейки.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Utility")
 	FVector GridToWorld(const FIntPoint& GridCoords) const;
-
 
 public:
 	FPlantCell MakePlantCell();
@@ -365,6 +394,12 @@ public:
 	void DrawDebugGreenhousePlantCells(float Duration = 2.0f);
 
 public:
+	/**
+	 * @brief Проверяет, находятся ли переданные координаты в допустимых границах сетки.
+	 *
+	 * @param GridCoords Координаты для проверки.
+	 * @return true, если координаты находятся внутри сетки; иначе false.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Utility")
 	FORCEINLINE bool IsGridCoordsValid(const FIntPoint& GridCoords) const
 	{
@@ -437,12 +472,23 @@ public:
 	int32 GridHeight = 20;
 
 public:
+	/**
+	 * @brief Точка в мировом пространстве, которая является центром всей сетки.
+	 * Все расчеты и отрисовка ячеек производятся относительно этой точки.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid Setting")
 	FVector GridOrigin;
 
+	/**
+	 * @brief Физический размер одной ячейки.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid Setting")
 	float CellSize = 15.0f;
 
+	/**
+	 * @brief Расстояние между центрами соседних ячеек сетки.
+	 * Определяет плотность посадки растений и общий размер теплицы.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Grid Setting")
 	float CellSpacing = 100.0f;
 
@@ -475,6 +521,7 @@ public:
 	UPROPERTY(BlueprintAssignable)
 	FOnPlantSeeded OnPlantSeeded;
 
+	/****/
 	UPROPERTY(BlueprintAssignable)
 	FOnSimulationUpdated OnSimulationUpdated;
 
