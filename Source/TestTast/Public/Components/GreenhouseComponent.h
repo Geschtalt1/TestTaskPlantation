@@ -158,7 +158,7 @@ bool SetResourceValue(const FGameplayTag& InResTag, float NewValue)
 			// Это количество прогресса, которое растение наберет за текущий маленький промежуток времени DeltaTime, с учетом множителя роста.
 			const float GrowthAmountThisTick = (BaseGrowthPerSecond * DeltaTime) * FinalGrowthMultiplier;
 
-			SetGrowthProgress(GrowthProgress += GrowthAmountThisTick);
+			SetGrowthProgress(GrowthProgress + GrowthAmountThisTick);
 		}
 
 		// --- Обновляем состояние ячейки ---
